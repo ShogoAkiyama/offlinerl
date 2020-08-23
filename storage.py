@@ -4,7 +4,7 @@ import torch
 
 
 class ReplayBuffer(object):
-	def __init__(self, state_dim, action_dim, device, max_size=int(1e6)):
+	def __init__(self, batch_size, state_dim, action_dim, device, max_size=int(1e6)):
 		self.max_size = max_size
 		self.ptr = 0
 		self.size = 0
@@ -15,6 +15,7 @@ class ReplayBuffer(object):
 		self.reward = np.zeros((max_size, 1))
 		self.not_done = np.zeros((max_size, 1))
 
+		self.batch_size = batch_size
 		self.device = device
 
 	def add(self, state, action, next_state, reward, done):
@@ -27,8 +28,8 @@ class ReplayBuffer(object):
 		self.ptr = (self.ptr + 1) % self.max_size
 		self.size = min(self.size + 1, self.max_size)
 
-	def sample(self, batch_size):
-		ind = np.random.randint(0, self.size, size=batch_size)
+	def sample(self):
+		ind = np.random.randint(0, self.size, size=self.batch_size)
 
 		return (
 			torch.FloatTensor(self.state[ind]).to(self.device),

@@ -1,12 +1,13 @@
 import copy
 import torch
+import torch.nn.functional as F
 
 from network.bear import Actor, Critic, VAE
 from utils import mmd_loss_gaussian, mmd_loss_laplacian
 from algo.algo import Algo
 
 
-class BEAR(Algo):
+class BRAC(Algo):
     def __init__(self, summary_dir, env_name, seed, device, max_timesteps, eval_freq,
                  buffer_dir, num_qs, state_dim, action_dim,
                  max_action, batch_size=100, gamma=0.99, tau=0.005, lmbda=0.75,
@@ -62,8 +63,6 @@ class BEAR(Algo):
             with torch.no_grad():
                 next_action = self.actor_target(next_state)
 
-            self.update_critic(state, action, next_state, next_action, reward, not_done)
-
             _, raw_sampled_actions = self.vae.decode_multiple(
                 state, num_decode=self.num_samples)  # B x N x d
             actor_actions, raw_actor_actions = self.actor.sample_multiple(
@@ -75,6 +74,8 @@ class BEAR(Algo):
             else:
                 mmd_loss = mmd_loss_laplacian(
                     raw_sampled_actions, raw_actor_actions, sigma=self.mmd_sigma)
+
+            self.update_critic(state, action, next_state, next_action, reward, not_done, mmd_loss)
 
             curr_q1, curr_q2 = self.critic(
                 state.repeat(self.num_samples, 1),
@@ -90,6 +91,30 @@ class BEAR(Algo):
 
             self.update_targets()
 
+    def update_critic(self, state, action, next_state, next_action, reward, not_done, mmd_loss):
+        if self.train_alpha:
+            alpha = self.log_lagrange.exp()
+        else:
+            alpha = 10.0
+
+        with torch.no_grad():
+            next_q1, next_q2 = self.critic_target(
+                next_state, next_action)
+
+            next_q = self.lmbda * torch.min(
+                next_q1, next_q2) + (1. - self.lmbda) * torch.max(next_q1, next_q2)
+            next_q = next_q.reshape(self.batch_size, -1).max(1)[0].reshape(-1, 1)
+
+            target_q = reward + not_done * self.gamma * (
+                    next_q - alpha*mmd_loss.view(-1, 1).detach())
+
+        curr_q1, curr_q2 = self.critic(state, action)
+        critic_loss = F.mse_loss(curr_q1, target_q) + F.mse_loss(curr_q2, target_q)
+
+        self.critic_optimizer.zero_grad()
+        critic_loss.backward()
+        self.critic_optimizer.step()
+
     def update_actor(self, min_curr_q, mmd_loss):
         if self.train_alpha:
             alpha = self.log_lagrange.exp()
@@ -98,7 +123,7 @@ class BEAR(Algo):
 
         actor_loss = (
             - min_curr_q
-            + alpha * mmd_loss
+            + alpha * mmd_loss.detach()
         ).mean()
 
         self.actor_optimizer.zero_grad()

@@ -106,7 +106,7 @@ class BRAC(Algo):
             next_q = next_q.reshape(self.batch_size, -1).max(1)[0].reshape(-1, 1)
 
             target_q = reward + not_done * self.gamma * (
-                    next_q - alpha*mmd_loss.view(-1, 1).detach())
+                    next_q - alpha*mmd_loss.view(-1, 1))
 
         curr_q1, curr_q2 = self.critic(state, action)
         critic_loss = F.mse_loss(curr_q1, target_q) + F.mse_loss(curr_q2, target_q)
@@ -123,7 +123,7 @@ class BRAC(Algo):
 
         actor_loss = (
             - min_curr_q
-            + alpha * mmd_loss.detach()
+            + alpha * mmd_loss
         ).mean()
 
         self.actor_optimizer.zero_grad()

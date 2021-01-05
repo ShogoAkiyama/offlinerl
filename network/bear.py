@@ -16,13 +16,13 @@ class Actor(nn.Module):
     def __init__(self, state_dim, action_dim, max_action):
         super(Actor, self).__init__()
         self.linear1 = nn.Sequential(
-            nn.Linear(state_dim, 400),
+            nn.Linear(state_dim, 200),
             nn.ReLU(),
-            nn.Linear(400, 300),
+            nn.Linear(200, 200),
             nn.ReLU()
         )
-        self.mean = nn.Linear(300, action_dim)
-        self.log_std = nn.Linear(300, action_dim)
+        self.mean = nn.Linear(200, action_dim)
+        self.log_std = nn.Linear(200, action_dim)
         self.max_action = max_action
 
     def forward(self, state):
@@ -50,8 +50,7 @@ class Actor(nn.Module):
 
     def log_pis(self, state, action=None, raw_action=None):
         """Get log pis for the model."""
-        a = F.relu(self.l1(state))
-        a = F.relu(self.l2(a))
+        a = self.linear1(state)
         mean_a = self.mean(a)
         log_std_a = self.log_std(a)
         std_a = torch.exp(log_std_a)
@@ -72,17 +71,17 @@ class Critic(nn.Module):
         super(Critic, self).__init__()
 
         self.linear1 = nn.Sequential(
-            nn.Linear(state_dim + action_dim, 400),
+            nn.Linear(state_dim + action_dim, 300),
             nn.ReLU(),
-            nn.Linear(400, 300),
+            nn.Linear(300, 300),
             nn.ReLU(),
             nn.Linear(300, 1)
         )
 
         self.linear2 = nn.Sequential(
-            nn.Linear(state_dim + action_dim, 400),
+            nn.Linear(state_dim + action_dim, 300),
             nn.ReLU(),
-            nn.Linear(400, 300),
+            nn.Linear(300, 300),
             nn.ReLU(),
             nn.Linear(300, 1)
         )
@@ -157,6 +156,6 @@ class VAE(nn.Module):
                 device=state.device).clamp(-0.5, 0.5)
 
         # x = torch.cat([state.unsqueeze(0).repeat(num_decode, 1, 1).permute(1, 0, 2), z], axis=2)
-        x = torch.cat([state.unsqueeze(1).repeat(1, num_decode, 1), z], axis=2)
+        x = torch.cat([state[:, None].repeat(1, num_decode, 1), z], axis=2)
         x = self.decoder(x)
         return self.max_action * torch.tanh(x), x

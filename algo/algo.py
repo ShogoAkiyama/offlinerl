@@ -43,14 +43,17 @@ class Algo(object):
         eval_env.seed(seed + 100)
 
         avg_reward = 0.
+        avg_q = 0
         for _ in range(eval_episodes):
             state, done = eval_env.reset(), False
             while not done:
-                action = self.select_action(np.array(state))
+                action, q = self.select_action(np.array(state))
                 state, reward, done, _ = eval_env.step(action)
                 avg_reward += reward
+                avg_q += q
 
         avg_reward /= eval_episodes
+        avg_q /= eval_episodes
 
         print("---------------------------------------")
         print(f"Evaluation over {eval_episodes} episodes: {avg_reward:.3f}")
@@ -58,6 +61,8 @@ class Algo(object):
 
         self.writer.add_scalar(
             'eval/return', avg_reward, self.training_iters)
+        self.writer.add_scalar(
+            'eval/Estimate Q', avg_q, self.training_iters)
 
     def update_vae(self, state, action):
         recon, mean, std = self.vae(state, action)
@@ -65,8 +70,19 @@ class Algo(object):
         kl_loss = -0.5 * (1 + torch.log(std.pow(2)) - mean.pow(2) - std.pow(2)).mean()
         vae_loss = recon_loss + 0.5 * kl_loss
 
+        # >> norms
+        norms = 0
+        for param in self.vae.parameters():
+            norms += torch.sum(torch.square(param))
+        # >> norms
+
+        loss = (
+            vae_loss
+            # + 1e-4 * norms
+        )
+
         self.vae_optimizer.zero_grad()
-        vae_loss.backward()
+        loss.backward()
         self.vae_optimizer.step()
 
     def update_critic(self, state, action, next_state, next_action, reward, not_done):
@@ -83,8 +99,19 @@ class Algo(object):
         curr_q1, curr_q2 = self.critic(state, action)
         critic_loss = F.mse_loss(curr_q1, target_q) + F.mse_loss(curr_q2, target_q)
 
+        # # >> norms
+        # norms = 0
+        # for param in self.critic.parameters():
+        #     norms += torch.sum(torch.square(param))
+        # # >> norms
+
+        loss = (
+            critic_loss
+            # + 1e-5 * norms
+        )
+
         self.critic_optimizer.zero_grad()
-        critic_loss.backward()
+        loss.backward()
         self.critic_optimizer.step()
 
     def update_actor(self, state):
@@ -93,8 +120,19 @@ class Algo(object):
 
         actor_loss = -self.critic.q1(state, perturbed_actions).mean()
 
+        # # >> norms
+        # norms = 0
+        # for param in self.critic.parameters():
+        #     norms += torch.sum(torch.square(param))
+        # # >> norms
+
+        loss = (
+            actor_loss
+            # + 1e-5 * norms
+        )
+
         self.actor_optimizer.zero_grad()
-        actor_loss.backward()
+        loss.backward()
         self.actor_optimizer.step()
 
     def update_targets(self):

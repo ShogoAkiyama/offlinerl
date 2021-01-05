@@ -51,6 +51,11 @@ class Critic(nn.Module):
 
     def q1(self, state, action):
         x = torch.cat([state, action], 1)
+        q1 = self.linear1(x)
+        return q1
+
+    def q2(self, state, action):
+        x = torch.cat([state, action], 1)
         q1 = self.linear2(x)
         return q1
 
@@ -103,3 +108,14 @@ class VAE(nn.Module):
         y = torch.cat([state, z], 1)
         y = self.decoder(y)
         return self.max_action * torch.tanh(y)
+
+    def decode_multiple(self, state, z=None, num_decode=10):
+        if z is None:
+            z = torch.randn(
+                (state.shape[0], num_decode, self.latent_dim),
+                device=state.device).clamp(-0.5, 0.5)
+
+        # x = torch.cat([state.unsqueeze(0).repeat(num_decode, 1, 1).permute(1, 0, 2), z], axis=2)
+        x = torch.cat([state[:, None].repeat(1, num_decode, 1), z], axis=2)
+        x = self.decoder(x)
+        return self.max_action * torch.tanh(x), x
